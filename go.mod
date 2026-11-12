@@ -2,6 +2,8 @@ module github.com/sketchd2/jims_vpn
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	fyne.io/systray v1.12.2
 	golang.org/x/crypto v0.59.0
