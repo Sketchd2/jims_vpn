@@ -5,6 +5,8 @@ on:
     branches: ["**"]
     tags: ["v*"]
   pull_request:
+  schedule:
+    - cron: "17 3 * * 1" # weekly, so new advisories are noticed without a push
 
 permissions:
   contents: write
@@ -21,6 +23,11 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+      - name: Check dependencies for known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          GOOS=linux govulncheck ./...
+          GOOS=windows govulncheck ./...
       - run: sudo apt-get update && sudo apt-get install -y nsis
       - name: Build packages and installer
         run: |
