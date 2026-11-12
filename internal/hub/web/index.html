@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JimsVPN hub</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #fff; --text: #1c2330; --muted: #667085; --line: #dfe3e8;
+  --accent: #1f6feb; --accent-text: #fff; --ok: #1a7f37; --warn: #b54708; --bad: #c62828; --chip: #eef2f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1319; --panel: #171c24; --text: #e6e9ee; --muted: #8b95a5; --line: #2a313c;
+    --accent: #4b8ff5; --accent-text: #08101c; --ok: #4cc26b; --warn: #f0a04b; --bad: #f07070; --chip: #222a35; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 17px; margin: 0; flex: 1; }
+header small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+main { max-width: 1080px; margin: 0 auto; padding: 20px 16px 60px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.head h2 { margin: 0; font-size: 17px; }
+.head .meta { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+h3 { margin: 0; padding: 12px 16px 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 16px; white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+tbody tr { border-top: 1px solid var(--line); }
+td.num { font-variant-numeric: tabular-nums; }
+.empty { padding: 6px 16px 14px; color: var(--muted); font-size: 14px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 7px; }
+.dot.on { background: var(--ok); }
+.chip { display: inline-block; background: var(--chip); border-radius: 999px; padding: 1px 9px; font-size: 12px; margin-right: 4px; }
+.badge { font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; color: var(--muted); }
+button, input, select { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 5px 11px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button.danger { color: var(--bad); }
+button.small { padding: 2px 8px; font-size: 13px; }
+input, select { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 6px 9px; width: 100%; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px; }
+.hint { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); padding: 20px; width: min(460px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog h2 { margin: 0 0 6px; font-size: 17px; }
+.row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+.err { color: var(--bad); font-size: 13.5px; min-height: 1.2em; margin-top: 8px; }
+.token { font: 12.5px ui-monospace, Consolas, monospace; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 9px; user-select: all; }
+#login { max-width: 340px; margin: 12vh auto; padding: 22px; }
+#login h2 { margin: 0 0 4px; }
+.tools { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>JimsVPN hub <small id="hubinfo"></small></h1>
+  <button id="addnet" class="primary" hidden>New network</button>
+  <button id="logout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login" hidden>
+    <h2>Sign in</h2>
+    <form id="loginform">
+      <label for="pw">Admin password</label>
+      <input id="pw" type="password" autocomplete="current-password" required>
+      <div class="err" id="loginerr"></div>
+      <div class="row"><button class="primary">Sign in</button></div>
+    </form>
+  </section>
+  <div id="nets"></div>
+</main>
+<dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state = null, timer = null;
+
+async function api(method, path, body) {
+  const r = await fetch('/admin/api/' + path, {method, headers: {'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && path !== 'login') { showLogin(); throw new Error('Please sign in.'); }
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function showLogin() {
+  clearInterval(timer);
+  $('#login').hidden = false; $('#nets').innerHTML = '';
+  $('#addnet').hidden = $('#logout').hidden = true;
+  $('#pw').focus();
+}
+
+$('#loginform').onsubmit = async e => {
+  e.preventDefault();
+  try { await api('POST', 'login', {password: $('#pw').value}); $('#pw').value = ''; $('#loginerr').textContent = ''; start(); }
+  catch (err) { $('#loginerr').textContent = err.message; }
+};
+$('#logout').onclick = async () => { await api('POST', 'logout', {}).catch(() => {}); showLogin(); };
+
+function ago(t, now) {
+  if (!t) return 'never';
+  const s = Math.max(0, now - t);
+  if (s < 90) return s + ' s ago';
+  if (s < 5400) return Math.round(s / 60) + ' min ago';
+  if (s < 129600) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' d ago';
+}
+function size(n) {
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n) + ' ' + u[i];
+}
+const chips = g => (g && g.length) ? g.map(x => `<span class="chip">${esc(x)}</span>`).join('') : '<span class="hint">none</span>';
+
+function render() {
+  const s = state;
+  $('#hubinfo').textContent = `${s.public_host} · v${s.version}`;
+  if (!s.networks.length) {
+    $('#nets').innerHTML = '<section><div class="empty" style="padding-top:14px">No networks yet. Create one with <b>New network</b>, then issue a join code for each device.</div></section>';
+    return;
+  }
+  $('#nets').innerHTML = s.networks.map(n => {
+    const restricted = n.mode === 'restricted';
+    const devs = n.devices.map(d => {
+      const online = d.last_seen && s.now - d.last_seen < 190 + n.keepalive;
+      return `<tr>
+        <td><span class="dot ${online ? 'on' : ''}" title="${online ? 'online' : 'offline'}"></span>${esc(d.name)}</td>
+        <td class="num">${esc(d.ip)}</td><td>${esc(d.os)}</td>
+        ${restricted ? `<td>${chips(d.groups)}</td>` : ''}
+        <td>${ago(d.last_seen, s.now)}</td><td class="num">${esc(d.endpoint)}</td>
+        <td class="num">${size(d.rx)} / ${size(d.tx)}</td>
+        <td class="tools"><button class="small" data-act="editdev" data-net="${esc(n.name)}" data-id="${esc(d.id)}">Edit</button>
+          <button class="small danger" data-act="deldev" data-net="${esc(n.name)}" data-id="${esc(d.id)}">Remove</button></td></tr>`;
+    }).join('');
+    const codes = n.codes.map((c, i) => `<tr>
+        <td>${esc(c.note) || '<span class="hint">no note</span>'}</td>
+        ${restricted ? `<td>${chips(c.groups)}</td>` : ''}
+        <td class="num">${c.uses} / ${c.max_uses || '∞'}</td>
+        <td>${c.valid ? (c.expires ? 'expires ' + new Date(c.expires * 1000).toLocaleString() : 'never expires') : '<span style="color:var(--warn)">used up or expired</span>'}</td>
+        <td class="tools">${c.valid ? `<button class="small" data-act="showcode" data-net="${esc(n.name)}" data-i="${i}">Show token</button>` : ''}
+          <button class="small danger" data-act="delcode" data-net="${esc(n.name)}" data-i="${i}">Revoke</button></td></tr>`).join('');
+    return `<section>
+      <div class="head">
+        <h2>${esc(n.name)}</h2>
+        <span class="badge" title="${restricted ? 'Devices only reach devices that share a group' : 'Every device reaches every other device'}">${esc(n.mode)}</span>
+        <span class="meta">${esc(n.cidr)} · hub ${esc(n.hub_ip)} · UDP ${n.port} · keepalive ${n.keepalive}s</span>
+        <button data-act="addcode" data-net="${esc(n.name)}" class="primary">Add device</button>
+        <button data-act="editnet" data-net="${esc(n.name)}">Settings</button>
+        <button data-act="delnet" data-net="${esc(n.name)}" class="danger">Delete</button>
+      </div>
+      <h3>Devices</h3>
+      ${devs ? `<div class="scroll"><table><thead><tr><th>Name</th><th>Address</th><th>System</th>${restricted ? '<th>Groups</th>' : ''}<th>Last seen</th><th>Connects from</th><th>Received / sent</th><th></th></tr></thead><tbody>${devs}</tbody></table></div>`
+             : '<div class="empty">No devices have joined yet.</div>'}
+      <h3>Join codes</h3>
+      ${codes ? `<div class="scroll"><table><thead><tr><th>Note</th>${restricted ? '<th>Groups</th>' : ''}<th>Used</th><th>Validity</th><th></th></tr></thead><tbody>${codes}</tbody></table></div>`
+              : '<div class="empty">No join codes. Use <b>Add device</b> to create one.</div>'}
+    </section>`;
+  }).join('');
+}
+
+async function refresh() {
+  if ($('#dlg').open) return;
+  try { state = await api('GET', 'state'); render(); } catch (e) {}
+}
+async function start() {
+  try { state = await api('GET', 'state'); } catch (e) { return; }
+  $('#login').hidden = true; $('#addnet').hidden = $('#logout').hidden = false;
+  render();
+  clearInterval(timer); timer = setInterval(refresh, 5000);
+}
+
+// form opens a dialog; onsubmit returns a promise, and the dialog closes when it resolves.
+function form(html, submitLabel, onsubmit) {
+  const f = $('#dlgform');
+  f.innerHTML = html + `<div class="err" id="dlgerr"></div><div class="row">
+    <button type="button" id="dlgcancel">${onsubmit ? 'Cancel' : 'Close'}</button>
+    ${onsubmit ? `<button class="primary" id="dlgok">${submitLabel}</button>` : ''}</div>`;
+  $('#dlgcancel').onclick = () => { $('#dlg').close(); refresh(); };
+  f.onsubmit = async e => {
+    e.preventDefault();
+    try { const keep = await onsubmit(new FormData(f)); if (!keep) { $('#dlg').close(); refresh(); } }
+    catch (err) { $('#dlgerr').textContent = err.message; }
+  };
+  $('#dlg').showModal();
+}
+const groupsOf = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+const modeHelp = '<div class="hint"><b>Flat</b>: every device reaches every other device. <b>Restricted</b>: a device only reaches devices that share one of its groups.</div>';
+
+function showToken(token) {
+  form(`<h2>Join token</h2>
+    <p class="hint">Send this to the device's owner. On Windows: copy it, then choose <b>Join network from clipboard</b> in the JimsVPN tray menu. On Linux run the command below.</p>
+    <div class="token" id="tok">jvpn join ${esc(token)}</div>
+    <div class="row" style="justify-content:flex-start;margin-top:10px"><button type="button" id="copytok">Copy</button></div>`);
+  $('#copytok').onclick = () => navigator.clipboard.writeText('jvpn join ' + token).then(() => $('#copytok').textContent = 'Copied');
+}
+
+$('#addnet').onclick = () => form(`<h2>New network</h2>
+  <label>Name</label><input name="name" required pattern="[a-z0-9][a-z0-9-]{0,11}" placeholder="frws" autocomplete="off">
+  <div class="hint">Up to 12 characters: a–z, 0–9 and hyphen.</div>
+  <label>Access</label><select name="mode"><option value="flat">Flat</option><option value="restricted">Restricted</option></select>${modeHelp}
+  <label>Subnet (optional)</label><input name="cidr" placeholder="automatic, e.g. 10.77.1.0/24" autocomplete="off">
+  <label>UDP port (optional)</label><input name="port" type="number" min="1" max="65535" placeholder="automatic, from 51820">
+  <div class="hint">Remember to open this UDP port in the server's firewall.</div>`,
+  'Create', fd => api('POST', 'networks', {name: fd.get('name'), mode: fd.get('mode'), cidr: fd.get('cidr'), port: +fd.get('port') || 0}).then(() => false));
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const net = state.networks.find(n => n.name === b.dataset.net); if (!net) return;
+  const p = 'networks/' + encodeURIComponent(net.name);
+  const restricted = net.mode === 'restricted';
+  switch (b.dataset.act) {
+  case 'addcode':
+    form(`<h2>Add device to ${esc(net.name)}</h2>
+      <p class="hint">This creates a join code. Anyone holding it can join until it is used up, expires or is revoked.</p>
+      <label>Note</label><input name="note" placeholder="Who or what is it for?" maxlength="100" autocomplete="off">
+      ${restricted ? `<label>Groups</label><input name="groups" placeholder="e.g. alice" autocomplete="off">
+      <div class="hint">Comma separated. Devices joining with this code can reach each other and any device sharing a group.</div>` : ''}
+      <label>Number of devices</label><input name="uses" type="number" min="0" value="1" required>
+      <div class="hint">0 = unlimited.</div>
+      <label>Valid for</label><select name="hours"><option value="24">1 day</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="0">Forever</option></select>`,
+      'Create code', async fd => {
+        const r = await api('POST', p + '/codes', {note: fd.get('note'), groups: groupsOf(fd.get('groups')), max_uses: +fd.get('uses'), expires_hours: +fd.get('hours')});
+        showToken(r.token); return true;
+      });
+    break;
+  case 'showcode': showToken(net.codes[+b.dataset.i].token); break;
+  case 'delcode':
+    form(`<h2>Revoke join code?</h2><p>Devices that already joined with it stay connected.</p>`, 'Revoke',
+      () => api('DELETE', p + '/codes/' + encodeURIComponent(net.codes[+b.dataset.i].code)).then(() => false));
+    break;
+  case 'editnet':
+    form(`<h2>${esc(net.name)} settings</h2>
+      <label>Access</label><select name="mode"><option value="flat" ${restricted ? '' : 'selected'}>Flat</option><option value="restricted" ${restricted ? 'selected' : ''}>Restricted</option></select>${modeHelp}
+      <label>Default keepalive (seconds)</label><input name="keepalive" type="number" min="0" max="3600" value="${net.keepalive}" required>
+      <div class="hint">Applies to devices that join from now on. Existing devices change theirs with <code>jvpn set ${esc(net.name)} --keepalive N</code>.</div>`,
+      'Save', fd => api('PATCH', p, {mode: fd.get('mode'), keepalive: +fd.get('keepalive')}).then(() => false));
+    break;
+  case 'delnet':
+    form(`<h2>Delete network ${esc(net.name)}?</h2><p>All ${net.devices.length} device(s) are disconnected immediately and would have to join again. This cannot be undone.</p>
+      <label>Type the network name to confirm</label><input name="confirm" required pattern="${esc(net.name)}" autocomplete="off">`, 'Delete network',
+      () => api('DELETE', p).then(() => false));
+    break;
+  case 'editdev': {
+    const d = net.devices.find(x => x.id === b.dataset.id);
+    form(`<h2>Edit device</h2>
+      <label>Name</label><input name="name" value="${esc(d.name)}" required maxlength="48" autocomplete="off">
+      <label>Groups</label><input name="groups" value="${esc(d.groups.join(', '))}" autocomplete="off">
+      <div class="hint">${restricted ? 'Comma separated. This device reaches devices that share at least one group.' : 'Groups only take effect when the network is set to restricted.'}</div>`,
+      'Save', fd => api('PATCH', p + '/devices/' + encodeURIComponent(d.id), {name: fd.get('name'), groups: groupsOf(fd.get('groups'))}).then(() => false));
+    break; }
+  case 'deldev': {
+    const d = net.devices.find(x => x.id === b.dataset.id);
+    form(`<h2>Remove ${esc(d.name)}?</h2><p>It is disconnected immediately and needs a new join code to come back.</p>`, 'Remove',
+      () => api('DELETE', p + '/devices/' + encodeURIComponent(d.id)).then(() => false));
+    break; }
+  }
+});
+
+start();
+</script>
+</body>
+</html>

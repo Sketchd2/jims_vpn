@@ -1,0 +1,16 @@
+[Unit]
+Description=JimsVPN client
+Documentation=https://github.com/sketchd2/jims_vpn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/jvpn daemon
+Restart=always
+RestartSec=5
+RuntimeDirectory=jimsvpn
+StateDirectory=jimsvpn
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

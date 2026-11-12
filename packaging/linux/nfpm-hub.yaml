@@ -1,0 +1,21 @@
+name: jimsvpn-hub
+arch: ${PKG_ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+maintainer: sketchd2
+description: JimsVPN hub - enrols devices and relays their WireGuard traffic. Run one on a server with a public address.
+homepage: https://github.com/sketchd2/jims_vpn
+contents:
+  - src: ${BIN_DIR}/jvpn-hub
+    dst: /usr/bin/jvpn-hub
+  - src: packaging/linux/jvpn-hub.service
+    dst: /usr/lib/systemd/system/jvpn-hub.service
+  - src: packaging/linux/jvpn-hub.sysusers
+    dst: /usr/lib/sysusers.d/jimsvpn-hub.conf
+scripts:
+  postinstall: packaging/linux/hub-postinstall.sh
+  preremove: packaging/linux/hub-preremove.sh
+archlinux:
+  scripts:
+    postupgrade: packaging/linux/hub-postinstall.sh

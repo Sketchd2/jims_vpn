@@ -1,0 +1,24 @@
+[Unit]
+Description=JimsVPN hub
+Documentation=https://github.com/sketchd2/jims_vpn
+After=network-online.target
+Wants=network-online.target
+# Created by: jvpn-hub init --public-host <name>
+ConditionPathExists=/var/lib/jimsvpn-hub/hub.json
+
+[Service]
+User=jimsvpn-hub
+Group=jimsvpn-hub
+ExecStart=/usr/bin/jvpn-hub serve
+Restart=always
+RestartSec=5
+StateDirectory=jimsvpn-hub
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

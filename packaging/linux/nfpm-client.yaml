@@ -1,0 +1,23 @@
+name: jimsvpn
+arch: ${PKG_ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+maintainer: sketchd2
+description: JimsVPN client - keeps this machine connected to one or more private WireGuard networks.
+homepage: https://github.com/sketchd2/jims_vpn
+depends:
+  - iproute2
+contents:
+  - src: ${BIN_DIR}/jvpn
+    dst: /usr/bin/jvpn
+  - src: packaging/linux/jvpn.service
+    dst: /usr/lib/systemd/system/jvpn.service
+  - src: packaging/linux/jvpn.sysusers
+    dst: /usr/lib/sysusers.d/jimsvpn.conf
+scripts:
+  postinstall: packaging/linux/client-postinstall.sh
+  preremove: packaging/linux/client-preremove.sh
+archlinux:
+  scripts:
+    postupgrade: packaging/linux/client-postinstall.sh
